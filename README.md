@@ -8,7 +8,7 @@
 
 # My assets:
 - ⏩: Fast-learning 
-- involvement 
+- Involvement 
 - Hard-Working 
 - 🤔 Critical thinking
 - 📊 Analyse 
