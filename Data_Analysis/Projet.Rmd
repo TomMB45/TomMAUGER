@@ -1,0 +1,390 @@
+---
+title: "Projet R"
+author: "MAUGER-BIROCHAU Tom, FRANC Célya, AZUAGA MORESO Marina, BADIN Léa, LECOUFFE Aurane, MEYER Charlène"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,include=F}
+##### Import des librairies nécessaires
+
+source("C:/Users/Tom/Documents/Cours/Polytech/3A/3A/S6/Biostat/TD/TP1/codageR_TOTAL_R_MARDOWN_EC_BT.R")
+library(DataCombine)
+library(prodlim)
+library(binom)
+library(gsDesign)
+library(cvAUC)
+library(caret)
+
+library(flextable)
+library(knitr)
+library(kableExtra)
+library(dplyr)
+
+
+#### import des tables SAS
+
+table_dir="C:/Users/Tom/Documents/Cours/Polytech/3A/3A/S6/Biostat/Projet/Data/"
+
+#importer la base de donnée
+format=".sas7bdat"
+
+table=c("descriptif")
+for (i in table){
+  path=paste0(table_dir,i,format)
+  x=read.sas7bdat(path)
+  assign(i,x)
+}
+
+for(i in c(2,5,7,8,9,10,13,14,15,21,24:43)){descriptif[,i][descriptif[,i] == "NaN"]<-NA}
+for(i in c(2,5,7,8,9,10,13,14,15,21,24:43)){descriptif[,i]<-as.factor(descriptif[,i])}
+for(i in c(9,13,14,24:39)){descriptif[,i]<-factor(descriptif[,i],levels=c(0,1),labels=c("NON","OUI"))}
+for(i in c(8)){descriptif[,i]<-factor(descriptif[,i],levels=c(1,2,3,4,5,6,7,8,9,10,11,12,13,14),labels=c("STAGE 0","STAGE IA","STAGE IA1","STAGE IA2","STAGE IA3","STAGE IB","STAGE IIA","STAGE IIB","STAGE IIIA","STAGE IIIB","STAGE IIIC","STAGE IV","STAGE IVA","STAGE IVB"))}
+for(i in c(7)){descriptif[,i]<-factor(descriptif[,i],levels=c(1,2,3),labels=c("ADENOCARCINOME","CARCINOME EPIDERMOIDE","AUTRE"))}
+for(i in c(2)){descriptif[,i]<-factor(descriptif[,i],levels=c(1,2,3),labels=c("PREMBROLUZIMAB","NIVOLUMAB","ATEZOLIZUMAB"))}
+
+for(i in c(42)){descriptif[,i]<-factor(descriptif[,i],levels=c(0,1),labels=c("< 65 ans",">=65 ans"))}
+for(i in c(43)){descriptif[,i]<-factor(descriptif[,i],levels=c(0,1),labels=c("0",">0"))}
+for(i in c(44)){descriptif[,i]<-factor(descriptif[,i],levels=c(0,1,2),labels=c("0","1-49",">=50"))}
+
+for(i in c(6,22,23)){descriptif[,i]<-as.numeric(descriptif[,i])}
+
+descriptif$STAGE_REGROUP <- fct_recode(descriptif$TUSTAGE,
+                                       "STAGE 0/I/II/III"= "STAGE 0",
+                                       "STAGE 0/I/II/III"= "STAGE IA",
+                                       #"STAGE IA1"= "0" ,
+                                       #"STAGE IA2"= "0" ,
+                                       #"STAGE IA3"= "0" ,
+                                       "STAGE 0/I/II/III"= "STAGE IB" ,
+                                       #"STAGE IIA"= "0" ,
+                                       "STAGE 0/I/II/III"= "STAGE IIB",
+                                       "STAGE 0/I/II/III"= "STAGE IIIA",
+                                       "STAGE 0/I/II/III"= "STAGE IIIB",
+                                       #"STAGE IIIC"= "0" ,
+                                       "STAGE IV"= "STAGE IV",
+                                       "STAGE IV"= "STAGE IVA",
+                                       #"STAGE IVB"= "1" 
+)
+
+descriptif$PS_REGROUP <- fct_recode(descriptif$PS,
+                                    "PS 0"= "ACTIVITE NORMALE SANS RESTRICTION",
+                                    "PS 1"="ACTIVITE NORMALE AVEC RESTRICTION DES EFFORTS INTENSES",
+                                    "PS 2/3"="ACTIVITE LIMITEE AUX BESOINS PERSONNELS STRICT AVEC ALITEMENT PENDANT 50 % DES HEURES DE VEILLE" ,
+                                    "PS 2/3"="ACTIVITE REDUITE MAIS PATIENT AMBULATOIRE PENDANT AU MOINS 50% DES HEURES DE VEILLE",
+                                    "NaN"="." 
+)
+
+descriptif$TRAITEMENT <- fct_recode(descriptif$SUTERM,
+                                    "PREMBROLUZIMAB"= "PREMBROLUZIMAB",
+                                    "NIVOLUMAB"="NIVOLUMAB",
+                                    "NaN"="ATEZOLIZUMAB" 
+)
+
+descriptif$REPONSE1 <- fct_recode(descriptif$PERCISTTEP1,
+                                  "RC/RP/ST"="REPONSE COMPLETE",
+                                  "RC/RP/ST"="REPONSE PARTIELLE",
+                                  "RC/RP/ST"="STABILITE",
+                                  "PROGRESSION"="PROGRESSION INDETERMINEE (PREMIERE PROGRESSION PERCIST)",
+                                  "PROGRESSION"="PROGRESSION INDETERMINEE" 
+)
+
+descriptif$REPONSE2 <- fct_recode(descriptif$PERCISTTEP2,
+                                  "NaN"="",
+                                  "RC/RP/ST"="REPONSE COMPLETE",
+                                  "RC/RP/ST"="REPONSE PARTIELLE",
+                                  "RC/RP/ST"="STABILITE",
+                                  "RC/RP/ST"="PROGRESSION INDETERMINEE",
+                                  "RC/RP/ST"="PROGRESSION INDETERMINEE (PREMIERE PROGRESSION PERCIST)",
+                                  "PROGRESSION"="2ND PROGRESSION PERCIST AVEC UNE PROGRESSION HOMOGENE DES LESIONS",
+                                  "PROGRESSION"="EVOLUTION DISSOCIEE  (2ND PROGRESSION PERCIST MAIS AVEC CONCOMITANCE DE LESIONS EN PROGRESSION ET EN", 
+                                  "PROGRESSION"="EVOLUTION DISSOCIEE (SECONDE PROGRESSION PERCIST MAIS AVEC CONCOMITANCE DE LESIONS EN PROGRESSION ET", 
+                                  "PROGRESSION"="PROGRESSION CONFIRMEE (SECONDE PROGRESSION PERCIST AVEC UNE PROGRESSION HOMOGENE DES LESIONS)"
+)
+
+descriptif$PS_REGROUP1 <- fct_recode(descriptif$PS,
+                                     "PS 0"="ACTIVITE NORMALE SANS RESTRICTION",
+                                     "PS 1/2"="ACTIVITE NORMALE AVEC RESTRICTION DES EFFORTS INTENSES",
+                                     "PS 3"="ACTIVITE LIMITEE AUX BESOINS PERSONNELS STRICT AVEC ALITEMENT PENDANT 50 % DES HEURES DE VEILLE" ,
+                                     "PS 1/2"="ACTIVITE REDUITE MAIS PATIENT AMBULATOIRE PENDANT AU MOINS 50% DES HEURES DE VEILLE",
+                                     "NaN"="." 
+)
+
+for(i in c(46,48,50,49,47)){descriptif[,i][descriptif[,i] == "NaN"]<-NA}
+for(i in c(39:50)){descriptif[,i]<-as.factor(descriptif[,i])}
+
+#for(i in c(40)){descriptif_GENE[,i][descriptif_GENE[,i] == ""]<-NA}
+
+descriptif$TABAC<- fct_recode(descriptif$MHOCCUR,
+                              "NON"="0",
+                              "OUI"="1", 
+                              "OUI"="2",
+                              "OUI"="3"
+)
+
+for(i in c(40,41)){descriptif[,i][descriptif[,i] == ""]<-NA}
+for(i in c(16)){descriptif[,i][descriptif[,i] == "."]<-NA}
+
+for(i in c(51)){descriptif[,i]<-as.factor(descriptif[,i])}
+
+descriptif2=droplevels(descriptif)
+
+table_dir="C:/Users/Tom/Documents/Cours/Polytech/3A/3A/S6/Biostat/Projet/Data/" #importer la base de donnée 
+format=".sas7bdat"
+
+table=c("delai_tep_trt_final")
+for (i in table){
+  path=paste0(table_dir,i,format)
+  x=read.sas7bdat(path)
+  assign(i,x)
+}
+
+descriptif<-merge(descriptif2,delai_tep_trt_final, by="SUBJID")
+
+for(i in c(56,57,58)){descriptif[,i]<-as.numeric(descriptif[,i])}
+
+```
+
+
+```{r, include=FALSE}
+#Library 
+source("C:/Users/Tom/Documents/Cours/Polytech/3A/3A/S6/Biostat/TD/TP1/codageR_TOTAL_R_MARDOWN_EC_BT.R")
+library(epiDisplay)
+library(DataCombine)
+library(prodlim)
+library(binom)
+library(gsDesign)
+library(cvAUC)
+library(caret)
+library(vcd)
+library(greyzoneSurv)
+library(mgcv)
+library(haven)# read_sas () 
+library(ggplot2)
+library(stats) #test normalité => test de Shapiro,sperman 
+library(scales) #Pourcentage
+library(MASS)
+library(survival)#graphique de la survie
+library(survminer)
+```
+
+ANALYSE DESCRIPTIVE 
+
+```{r, include=FALSE}
+# Import de la table de données
+# descriptif = read.sas7bdat("C:/Users/Tom/Documents/Cours/Polytech/3A/S6/Biostat/Projet/Data/descriptif.sas7bdat")
+#tabcols(descriptif)
+# 
+# delais = read.sas7bdat("C:/Users/Tom/Documents/Cours/Polytech/3A/S6/Biostat/Projet/Data/delai_tep_trt_final.sas7bdat")
+# tabcols(delais)
+```
+
+
+```{r, include=TRUE}
+# 1 
+dim(descriptif) #Renvoie la dimention de la matrice des datas 
+
+```
+La dimension de la base de données "descriptif" est de 92 par 58 ce qui signifie que l'on étudie 58 paramètres cliniques différents dans un échantillon de 92 patients. 
+
+```{r, include=T}
+# 2 
+###Quantitatives
+for(i in c(3,6,11,12,22,23)){descriptif[,i]<-as.numeric(descriptif[,i])} 
+
+var =c("SUDOSE","AGE","MIORRESN","EXDOSE","DELAI_OS","DELAIBC")
+index=c()
+
+for (i in var){index=c(index,numcol(i,descriptif))}#On cherche tous les index des colonnes des variables 
+ft=sortiequanti(descriptif,index) #On utilise sortiquali avec les numéros de colonnes obtenues 
+ft =md_table(ft,fit=F)#On crée un tableau plus joli que 
+ft #on affiche le tableau 
+rm(index,ft) #on remove ces variables afin de pouvoir les réutiliser
+
+```
+
+```{r}
+###Qualitatives
+for(i in c(2,4,5,7:10,13:21,24:44)){descriptif[,i]<-as.factor(descriptif[,i])}
+
+var = c("SUTERM","SEX","TUTYPE","TUSTAGE","PROCCUR","MHOCCUR","RTH","CHIMIO","EXSEQ","ELLIGIBLE","FURSN","ETAT_OS","ETAT_SS","ELLIGIBLE_TEP1","BC12","BC6","NoLesionTEP1","POUMONTEP1","THYROIDETEP1","GASTRIQUE_GROUP1","DIGESTIF_GROUP1","AUTRES_GROUP1","TRPRST","NoLesionTEP2","TEP1TEP2","TEP1TEP2POUMON","TEP1TEP2THYROIDE","TEP1TEP2GASTRIQUE","TEP1TEP2DIGESTIF","TEP1TEP2AUTRES","AGE_65","PDL1","PDL1bis","STAGE_REGROUP","PS_REGROUP","TRAITEMENT","REPONSE1","REPONSE2","PS_REGROUP1")
+
+index=c()
+for (i in var){index=c(index,numcol(i,descriptif))} 
+ft=sortiequali(descriptif,index)
+ft =md_table(ft,fit=F)
+ft
+rm(index,ft)
+```
+```{r, include=TRUE}
+#3
+hist(round(descriptif$AGE),
+     breaks=c(6),
+     col = "#AAF0D1",
+     main = "Répartition de l'âge des patients dans l'étude", 
+     xlab="Âge des patients",
+     ylab="Densité", 
+     freq=F) #On donne l'axe x en densité au lieux de la fréquence 
+
+densite <- density(round(descriptif$AGE))#crée une fonction qui calcule la densité de population 
+lines(densite, col = "darkred" , lwd=3) #crée une line représentant la densité de population pour montrer que la variable suit une loi normale
+
+```
+
+
+L'âge des patients semble suivre une loi normale car on observe une répartition de type gaussienne.
+
+
+```{r,include=TRUE }
+#4
+pie(table(descriptif$SEX),
+    main="Répartition hommes femmes dans l'étude") #crée un diagramme en camembert de la répartition du sexe dans le jeu de donnée 
+text(0.2,0.4 , "36%")#On ajoute du text sur le graphique 
+text(-0.2,-0.3, "64%")
+```
+
+
+Dans cette étude clinique nous avons réalisé nos expériences avec 64 % d'hommes et 36 % de femmes.
+
+#petit plus
+```{r,include=TRUE}
+tab.croise<-table(descriptif$SEX,round(descriptif$AGE),deparse.level=2)#on crée une table de croisement : si pour chaque age on regarde si sex = 0 ou 1 et on regroupe 
+barplot(tab.croise,
+        legend.text=c("FEMMES ","HOMMES "),
+        col=c("grey","cyan"),
+        xlab="AGE",
+        ylab="Proportion hommes-femmes",
+        main="Proportion hommes-femmes selon l'âge")
+ 
+```
+
+```{r,include=TRUE}
+#5 
+shapiro.test(descriptif$AGE)#test de shapiro:test de la normalité des variables 
+```
+H0 : la variable AGE suit une loi normale. 
+H1 : la variable AGE ne suit pas une loi normale. 
+
+On obtient une p-value de 0,2778 (non significative car > 0,05) donc la variable AGE suit une loi normale, l'hypothèse alternative est rejetée.
+
+On observe graphiquement à la question 3 que la répartition de la variable AGE semble suivre une loi nomrale car on observe un histogramme de forme gaussiene. 
+
+On pourra donc réaliser des tests statistiques paramétriques comme le test Z, le test t (student), le test ANOVA etc... 
+
+```{r,include=TRUE}
+#6
+fit<-survfit(Surv(descriptif$DELAI_OS,as.numeric(descriptif$ETAT_OS))~descriptif$SEX,
+             data=descriptif) #Création  d'un modèle de survie en fonction de delais et de etat, on crée aussi deux groupes hommes et femmes permettant de voir si al survie est équivalente entre les sexes 
+fit 
+
+ggsurvplot(fit,
+           data = descriptif,
+           title="Courbe de survie",
+           conf.int=TRUE, #intervalle de confiance 
+           risk.table = TRUE, #table des risques 
+           risk.table.height = 0.3, #hauteur de la table de risque
+           risk.table.col = "strata", #strata = les deux groupes 
+           surv.median.line = "hv") #crée une droite horizontale et verticale représentant la survie médiane
+
+ggsurvplot(fit,
+           data = descriptif,
+           title="Courbe de probabilité d'évènement", 
+           conf.int=TRUE, 
+           risk.table = TRUE,
+           fun = "event",#le graphique est en fonction de la probabilité de survenu d'un évènement 
+           risk.table.height = 0.3,
+           risk.table.col = "strata")
+```
+
+
+La survie médiane est proche de 22 jours pour les hommes et les femmes. 
+
+
+ANALYSE UNIVARIEE 
+
+```{r,include=TRUE}
+#7 
+
+#Pour montrer si lien entre BC6 et la variable clinique : compare khi2 du tablestack à celui de la table du khi2. Test du khi2 de corrélation.
+
+tt=tableStack(vars=numcol(c("SEX","PROCCUR","MHOCCUR","RTH","CHIMIO","FURSN","NoLesionTEP1","NoLesionTEP2","AGE_65","PDL1","STAGE_REGROUP","PS_REGROUP","REPONSE1","REPONSE2","PS_REGROUP1"),descriptif),#variables clinques à étudier 
+              by=numcol("BC6",descriptif),dataFrame=descriptif,na.col=T)#On étudie ces variables en fonction du bénéfice clinique à 6 mois 
+
+bold_lines=which(tt[,1] %in% colnames(descriptif))
+colnames(tt)[1:3]=c("Caractéristique","Pas de BC6","BC6 oui")#on attribue les nom des colones 
+md_table(tt,bold.names =bold_lines)
+
+
+#Pour déterminer la nature du lien entre les variables cliniques et BC6 : calcul odds ratio avec IC95%
+
+df <- data.frame(Variables =c("REPONSE1","REPONSE2"),#création d'un jeu de donnée 
+                 Test =c("Khi2","Khi2"), 
+                 p_value =c("<0.001","<0.001"),
+                 Odd_Ratio_IC95 =c("15.18","9.22"))
+
+md_table(odds.ratio(descriptif$BC6,descriptif$REPONSE1,level=0.95))#fonction qui calcule les odds ratio
+md_table(odds.ratio(descriptif$BC6,descriptif$REPONSE2,level=0.95))
+md_table(df)
+```
+Pour REPONSE1 et 2 versus BC6 :
+On obtient des odds ratio de 15,18 et 9,22 (respectivement) ce qui signifie que le fait d'avoir une réponse positive augmente de 15 et 9 fois les chances d'avoir un bénéfice clinique positif à 6 mois;
+
+On trouve des odds ratio de 15,18 et 9,22 > 1 on a donc un effet positif des réponses 1 et 2 sur le bénfice clinique. Comme il est éloigné de 1 on peut donc dire que cet effet est important. 
+
+
+```{r,include=TRUE}
+#8
+#On teste la normalité de la variable DELAIBC afin de déterminer quel type de test statistique utiliser (paramétrique ou non)
+shapiro.test(descriptif$DELAIBC)
+```
+H0 : la variable DELAIBC suit une loi normale. 
+H1 : la variable DELAIBC ne suit pas une loi normale.
+
+On obtient une p-value de 7,8e-8 (significative car < 0,05) donc la variable DELAIBC ne suit pas une loi normale. L'hypothèse nulle est rejetée, l'hypothèse alternative est acceptée.
+On fait donc un test de spearman (non paramétrique) permettant de tester si il y a une corrélation entre ces deux variables. 
+
+```{r}
+spearman.test(descriptif$AGE,
+              descriptif$DELAIBC)
+
+plot(descriptif$AGE,#création d'un nuage de point 
+     descriptif$DELAIBC,
+     main="Nuage de points de la relation AGE / DELAIBC",
+     ylab="Délai avant un bénéfice clinique", #on attribue la légende de l'axe y 
+     xlab = "Âge",
+     pch=20,#pch = type de point ici petit et rond 
+     col="blue")
+```
+
+
+
+
+Avec le test de spearman, on a :  
+H0 : Il n'y a pas de corrélation entre les deux variables
+H1 : Il y a corrélation entre les deux variables 
+
+On a une p-value avec le test de spearman entre DELAIBC et AGE de 0,03<0,05 donc on accepte l'hypothèse nulle avec un risque alpha égal à 5%. 
+Ainsi, il n'y a pas de corrélation entre l'âge et le délai avant d'observer un bénéfice clinique. Graphiquement on observe le même résultat : les deux variables testées sont indépendantes. 
+
+```{r}
+#9
+descriptif$ETAT_OS<-as.numeric(descriptif$ETAT_OS)
+descriptif$DELAI_OS<-as.numeric(descriptif$DELAI_OS)
+
+ft<-surviebilogrank(descriptif,#dans quel data frame 
+                    22,#delais 
+                    20, #Etat obligatoirement sous forme numérique 
+                    c(5,7,9,10,13,14,18,26,33,42,43,45,44,45,46,48,49,50))#on calcule la survie en fonction des numéros de colones qualitatives des variables cliniques  entre survie et 
+ft=md_table(ft,fit=T)
+ft
+rm(ft)
+```
+On peut donc dire que la survie est influencée par FURSN, NoLESIONTEP2 et REPONSE1 avec un risque alpha de 5 %. 
+
+FURSN correspond à la raison d'un arrêt prématuré, ce qui parait logique que la survie soit influencée par cette variable. 
